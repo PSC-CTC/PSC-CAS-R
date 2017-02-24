@@ -6,8 +6,8 @@ This utility compares the Estimated Number, Fishery Name, and Tag Code for recov
 
 To run the utility, just double click the `CompareBaseRecoveries.cmd` command line script in the `PSC-CAS-R` folder.  
 
-1) The utility should prompt you to select a file, which should be an `.mdb` access database file.  
-2) After that selection, the utility will ask you to select a second `.mdb` access database file.
-3) The utility will output the file comparison to a `report` directory
+1. The utility should prompt you to select a file, which should be an `.mdb` Access database file.  
+2. After that selection, the utility will ask you to select a second `.mdb` Access database file.
+3. The utility will output the file comparison to the `report` directory
 
-*This help will need more work*
+*This help is a work in progress*
