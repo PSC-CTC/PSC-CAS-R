@@ -85,6 +85,11 @@ compare.df$Auxiliary.x[is.na(compare.df$Auxiliary.x)]  <- compare.df$Auxiliary.y
 compare.df <- select(compare.df, -one_of("Auxiliary.y"))
 compare.df <- rename(compare.df, Auxiliary=Auxiliary.x)
 
+#merge the Fishery name from the first and second data set to a single value in FisheryName
+compare.df$RecordFisheryName <- compare.df$FisheryName.y
+compare.df$RecordFisheryName[is.na(compare.df$RecordFisheryName)]  <- compare.df$FisheryName.x[is.na(compare.df$RecordFisheryName)]
+
+
 
 modified.df <- NULL
 
@@ -93,7 +98,11 @@ cat("Checking for Tag Code differences...\n")
 estimate.modifed.df <- filter(compare.df, EstimatedNumber.x != EstimatedNumber.y)
 
 estimate.modifed.df <- select(estimate.modifed.df, 
-                              one_of(c(kKeyFields, "Auxiliary", "EstimatedNumber.x", "EstimatedNumber.y")))
+                              one_of(c(kKeyFields, 
+                                       "Auxiliary", 
+                                       "RecordFisheryName", 
+                                       "EstimatedNumber.x", 
+                                       "EstimatedNumber.y")))
 
 estimate.modifed.df$EstimatedNumber.x <- as.character(estimate.modifed.df$EstimatedNumber.x)
 estimate.modifed.df$EstimatedNumber.y <- as.character(estimate.modifed.df$EstimatedNumber.y)
@@ -109,7 +118,12 @@ modified.df <- rbind(modified.df, estimate.modifed.df)
 cat("Checking for Fishery Name differences...\n")
 fishery.modifed.df <- filter(compare.df, FisheryName.x != FisheryName.y)
 fishery.modifed.df <- select(fishery.modifed.df, 
-                              one_of(c(kKeyFields, "Auxiliary", "FisheryName.x", "FisheryName.y")))
+                              one_of(c(kKeyFields, 
+                                       "Auxiliary", 
+                                       "RecordFisheryName", 
+                                       "FisheryName.x", 
+                                       "FisheryName.y")))
+
 fishery.modifed.df <- rename(fishery.modifed.df, 
                               FirstValue=FisheryName.x,
                               SecondValue=FisheryName.y)
@@ -121,7 +135,12 @@ modified.df <- rbind(modified.df, fishery.modifed.df)
 cat("Checking for Tag Code differences...\n")
 tag.modifed.df <- filter(compare.df, TagCode.x != TagCode.y)
 tag.modifed.df <- select(tag.modifed.df, 
-                             one_of(c(kKeyFields, "Auxiliary", "TagCode.x", "TagCode.y")))
+                             one_of(c(kKeyFields, 
+                                      "Auxiliary", 
+                                      "RecordFisheryName", 
+                                      "TagCode.x", 
+                                      "TagCode.y")))
+
 tag.modifed.df$TagCode.x <- paste0("'", tag.modifed.df$TagCode.x)
 tag.modifed.df$TagCode.y <- paste0("'", tag.modifed.df$TagCode.y)
 tag.modifed.df <- rename(tag.modifed.df, 
@@ -136,7 +155,9 @@ modified.df <- rbind(modified.df, tag.modifed.df)
 cat("Identifying Added Recoveries...\n")
 added.records.df <- filter(compare.df, is.na(TagCode.x) == TRUE, is.na(TagCode.y) == FALSE)
 added.records.df <- select(added.records.df, 
-                         one_of(c(kKeyFields, "Auxiliary")))
+                         one_of(c(kKeyFields, 
+                                  "Auxiliary",
+                                  "RecordFisheryName")))
 
 added.records.df$FirstValue <- ""
 added.records.df$SecondValue <- ""
@@ -149,7 +170,9 @@ modified.df <- rbind(modified.df, added.records.df)
 cat("Identifying Removed Recoveries...\n")
 removed.records.df <- filter(compare.df, is.na(TagCode.x) == FALSE, is.na(TagCode.y) == TRUE)
 removed.records.df <- select(removed.records.df, 
-                             one_of(c(kKeyFields, "Auxiliary")))
+                             one_of(c(kKeyFields, 
+                                      "Auxiliary",
+                                      "RecordFisheryName")))
 
 removed.records.df$FirstValue <- ""
 removed.records.df$SecondValue <- ""
