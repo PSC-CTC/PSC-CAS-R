@@ -12,7 +12,7 @@
 
 rm(list=ls()) #clean up the workspace
 options(stringsAsFactors = FALSE)
-header <- "PSC CAS Base Recovery Compare v0.1"
+header <- "PSC CAS Base Recovery Compare v0.1a"
 
 kKeyFields <- c("RecoveryId", "Agency", "RunYear")
 kPassThroughFields <- c("Auxiliary")
