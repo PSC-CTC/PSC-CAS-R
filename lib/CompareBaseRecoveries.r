@@ -53,7 +53,15 @@ SetupCluster <- function() {
 cat(paste0(header, "\n"))
 first.db.name <- choose.files(caption = "Select First CAS Database file", multi=FALSE, filters = Filters[c("txt", "All"),])
 
+if (length(first.db.name) == 0) {
+  stop("Selecting first database was cancelled by the user.")
+}
+
 second.db.name <- choose.files(caption = "Select Second CAS Database file", multi=FALSE, filters = Filters[c("txt", "All"),])
+
+if (length(second.db.name) == 0) {
+  stop("Selecting second database was cancelled by the user.")
+}
 
 cl <- SetupCluster()
 
