@@ -55,12 +55,16 @@ first.db.name <- choose.files(caption = "Select First CAS Database file", multi=
 
 if (length(first.db.name) == 0) {
   stop("Selecting first database was cancelled by the user.")
+} else {
+  cat(sprintf("First database file name: %s\n", first.db.name))
 }
 
 second.db.name <- choose.files(caption = "Select Second CAS Database file", multi=FALSE, filters = Filters[c("txt", "All"),])
 
 if (length(second.db.name) == 0) {
   stop("Selecting second database was cancelled by the user.")
+} else {
+  cat(sprintf("Second database file name: %s\n", second.db.name))
 }
 
 cl <- SetupCluster()
