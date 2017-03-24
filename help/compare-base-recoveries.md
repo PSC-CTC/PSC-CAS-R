@@ -1,4 +1,4 @@
-#Compare Base Recoveries
+# Compare Base Recoveries
 
 This utility compares the Estimated Number, Fishery Name, and Tag Code for recoveries in the `CWDBRecovery` table between two CAS databases.
 
