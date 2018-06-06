@@ -36,7 +36,7 @@ source(util.lib.name)
 cas.db.lib.name <- file.path(source.lib.dir, "CasDbLib.r")
 source(cas.db.lib.name)
 
-required.packages <- c("odbc", "dplyr", "parallel", "stringr", "tools")
+required.packages <- c("RODBC", "dplyr", "parallel", "stringr", "tools")
 InstallRequiredPackages(required.packages)
 
 SetupCluster <- function() {
