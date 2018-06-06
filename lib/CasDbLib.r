@@ -9,6 +9,9 @@
 #
 ################
 
+CASRecTblNames <- c("CWDBRecovery", "ERA_CWDBRecovery")
+CASFisheryTblNames <- c("Fishery", "ERA_Fishery")
+
 kCasBaseRecoveries <- "./sql/GetCasBaseRecoveries.sql"
 
 
@@ -17,58 +20,65 @@ TranslateDbColumnNames <- function(data) {
   return (data)
 }
 
-RunSqlFile <- function (db.conn, file.name, variables=NA) {
-  # A helper function that loads an SQL script, updates the variables in the script to values provide and
-  # formats the resulting data by renames columns to common R style.
-  #
-  # Args:
-  #   db.conn: An odbc connection to the ODBC database
-  #   file.name: A file name that the SQL script is saved to
-  #   variables: An R list of variables, variable names in the list are matched to ones with the same name in
-  #       a format like %VARIABLENAME% (eg list(runid = 1) will replace %RUNID% in the SQL with 1)
-  #
-  # Returns:
-  #   A data frame with query results
-  #
-  # Exceptions:
-  #   If a variable type is found that the function can't handle (e.g. a vector), the script
-  #   will throw an exception.
-  #     
-  file.conn <- file(file.name, "r", blocking = FALSE)
-  sql.text <- paste(readLines(file.conn), collapse=" ")# empty
-  close(file.conn)
+
+#' Retreives Sql Statement text, binds parameters to the text and basic format cleanup
+#'
+#' @param sql_file_name The name of of the file with sql to load
+#' @param params List of named parameters to bind to the sql text
+#' @param sql_dir The directory that stores all the sql statements (defaults to "sql")
+#' @param clean_sql A boolean that identifies if the format of the final sql should be cleaned (e.g. strip newlines)
+#' @param package_name The package name to load sql file from, defaults to the current package name
+#'
+#' @return An Sql text statement
+#'
+#' @importFrom stringr str_interp str_replace_all str_glue
+#' @importFrom futile.logger flog.error
+#'
+formatSql <- function(sql_file_name, params = NULL, clean_sql = TRUE) {
+  sql_file_path <- normalizePath(sql_file_name)
+  if (file.exists(sql_file_path) == FALSE) {
+    error_msg <- str_interp("ERROR - The sql file '${sql_file_name}' is missing.")
+    stop(error_msg)
+  }
+  sql_text <- readChar(sql_file_path, file.info(sql_file_path)$size)
   
-  if (is.list(variables)) {
-    var.names <- names(variables)
-    
-    for (var.idx in 1:length(var.names)) {
-      var.name <- var.names[var.idx]
-      var.value <- variables[[var.name]]
-      if (is.numeric(var.value)) {
-        sql.text <- gsub(paste0("%", var.name, "%"), var.value, sql.text, ignore.case=TRUE)
-      } else if (is.character(var.value) || is.factor(var.value)) {
-        sql.text <- gsub(paste0("%", var.name, "%"), 
-                         paste0("'", as.character(var.value), "'"), 
-                         sql.text, 
-                         ignore.case=TRUE)
-      } else {
-        stop(sprintf("Unknown variable type '%s' for variable '%s' when converting in RunSqlFile", typeof(var.value), var.name))
-      }
-    }
+  if (!is.null(params)) {
+    sql_text <- str_interp(sql_text, params)
   }
   
-  unbound.variables <- gregexpr("%[a-z]*%", sql.text, ignore.case=TRUE)
-  if (unbound.variables[[1]] > 0) {
-    error.msg <- sprintf("Unbound variables found for the '%s' sql script \n", file.name)
-    stop(error.msg)
+  if (clean_sql) {
+    sql_text <- str_replace_all(sql_text, "\r\n", " ")
   }
-  
-  data <- sqlQuery(db.conn, sql.text)
-  data <- TranslateDbColumnNames(data)
-  return (data)   
+  return(sql_text)
 }
 
+#' Generic function that retrieves data from database using sql file
+#'
+#' @param db_conn A connection to the MRP Operational database
+#' @param sql_filename A text file containing SQL file
+#' @param params Parameters to insert into the SQL statement
+#'
+#' @importFrom dplyr %>% as_tibble
+#' @importFrom DBI dbGetQuery
+#' @importFrom stringr str_to_lower
+#'
+getDbData <- function(db_conn, sql_filename, params = NULL) {
+  sql_text <- formatSql(sql_filename, params)
+  
+  data_result <-
+    sqlQuery(db_conn, sql_text)
+
+  data_result <- TranslateDbColumnNames(data_result)
+  return(data_result)
+}
+
+
 GetCasBaseRecoveries <- function (cas.db.conn){
-  data <- RunSqlFile(cas.db.conn, kCasBaseRecoveries)
+  #Find the approriate table name
+  table_names <- sqlTables(cas.db.conn)$TABLE_NAME
+  rec_tbl_name <- CASRecTblNames[CASRecTblNames %in% table_names]
+  fishery_tbl_name <- CASFisheryTblNames[CASFisheryTblNames %in% table_names]
+  data <- getDbData(cas.db.conn, kCasBaseRecoveries, list(rec_tbl_name = rec_tbl_name,
+                                                          fishery_tbl_name = fishery_tbl_name))
   return (data)
 }

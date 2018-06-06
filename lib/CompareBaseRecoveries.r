@@ -12,7 +12,7 @@
 
 rm(list=ls()) #clean up the workspace
 options(stringsAsFactors = FALSE)
-header <- "PSC CAS Base Recovery Compare v0.1a"
+header <- "PSC CAS Base Recovery Compare v0.2"
 
 kKeyFields <- c("RecoveryId", "Agency", "RunYear")
 kPassThroughFields <- c("Auxiliary")
@@ -36,12 +36,15 @@ source(util.lib.name)
 cas.db.lib.name <- file.path(source.lib.dir, "CasDbLib.r")
 source(cas.db.lib.name)
 
-required.packages <- c("RODBC", "dplyr", "parallel")
+required.packages <- c("odbc", "dplyr", "parallel", "stringr", "tools")
 InstallRequiredPackages(required.packages)
 
 SetupCluster <- function() {
   cl <- makeCluster(2)
   clusterEvalQ(cl, library(RODBC))
+  clusterEvalQ(cl, library(stringr))
+  clusterEvalQ(cl, library(tools))
+  clusterEvalQ(cl, library(dplyr))
   clusterExport(cl, c("cas.db.lib.name", "util.lib.name"))
   clusterEvalQ(cl, source(util.lib.name))
   clusterEvalQ(cl, source(cas.db.lib.name))
@@ -49,9 +52,10 @@ SetupCluster <- function() {
   return(cl)
 }
 
+db_file_filter <- rbind(Filters["All",], c("Access Database (*.mdb, *.accdb)", "*.mdb;*.accdb"))
 
 cat(paste0(header, "\n"))
-first.db.name <- choose.files(caption = "Select First CAS Database file", multi=FALSE, filters = Filters[c("txt", "All"),])
+first.db.name <- choose.files(caption = "Select First CAS Database file", multi=FALSE, filters = db_file_filter)
 
 if (length(first.db.name) == 0) {
   stop("Selecting first database was cancelled by the user.")
@@ -59,7 +63,7 @@ if (length(first.db.name) == 0) {
   cat(sprintf("First database file name: %s\n", first.db.name))
 }
 
-second.db.name <- choose.files(caption = "Select Second CAS Database file", multi=FALSE, filters = Filters[c("txt", "All"),])
+second.db.name <- choose.files(caption = "Select Second CAS Database file", multi=FALSE, filters = db_file_filter)
 
 if (length(second.db.name) == 0) {
   stop("Selecting second database was cancelled by the user.")
@@ -77,15 +81,20 @@ all.data <- parSapply(cl,
                       db.names, 
                       simplify = FALSE,
                       function(db.name) {
-                        db.conn <- odbcConnectAccess(db.name)
+                        db.conn <- NA
+                        if (file_ext(db.name) == "accdb") {
+                          db.conn <- odbcConnectAccess2007(db.name)
+                        } else {
+                          db.conn <- odbcConnectAccess(db.name)
+                        }
                         data <- GetCasBaseRecoveries(db.conn)
                         odbcClose(db.conn)
                         return(data)
                       })
 stopCluster(cl)
 
-first.df <- all.data[[1]] 
-second.df <- all.data[[2]]
+first.df <- all.data[[1]] %>% as_tibble()
+second.df <- all.data[[2]] %>% as_tibble()
 
 first.df <- select(first.df, one_of(kUsedFields))
 second.df <- select(second.df, one_of(kUsedFields))
@@ -100,8 +109,6 @@ compare.df <- rename(compare.df, Auxiliary=Auxiliary.x)
 #merge the Fishery name from the first and second data set to a single value in FisheryName
 compare.df$RecordFisheryName <- compare.df$FisheryName.y
 compare.df$RecordFisheryName[is.na(compare.df$RecordFisheryName)]  <- compare.df$FisheryName.x[is.na(compare.df$RecordFisheryName)]
-
-
 
 modified.df <- NULL
 
@@ -130,15 +137,15 @@ modified.df <- rbind(modified.df, estimate.modifed.df)
 cat("Checking for Fishery Name differences...\n")
 fishery.modifed.df <- filter(compare.df, FisheryName.x != FisheryName.y)
 fishery.modifed.df <- select(fishery.modifed.df, 
-                              one_of(c(kKeyFields, 
-                                       "Auxiliary", 
-                                       "RecordFisheryName", 
-                                       "FisheryName.x", 
-                                       "FisheryName.y")))
+                             one_of(c(kKeyFields, 
+                                      "Auxiliary", 
+                                      "RecordFisheryName", 
+                                      "FisheryName.x", 
+                                      "FisheryName.y")))
 
 fishery.modifed.df <- rename(fishery.modifed.df, 
-                              FirstValue=FisheryName.x,
-                              SecondValue=FisheryName.y)
+                             FirstValue=FisheryName.x,
+                             SecondValue=FisheryName.y)
 fishery.modifed.df$FieldName <- "FisheryName"
 fishery.modifed.df$Comment <- ""
 modified.df <- rbind(modified.df, fishery.modifed.df)
@@ -147,17 +154,17 @@ modified.df <- rbind(modified.df, fishery.modifed.df)
 cat("Checking for Tag Code differences...\n")
 tag.modifed.df <- filter(compare.df, TagCode.x != TagCode.y)
 tag.modifed.df <- select(tag.modifed.df, 
-                             one_of(c(kKeyFields, 
-                                      "Auxiliary", 
-                                      "RecordFisheryName", 
-                                      "TagCode.x", 
-                                      "TagCode.y")))
+                         one_of(c(kKeyFields, 
+                                  "Auxiliary", 
+                                  "RecordFisheryName", 
+                                  "TagCode.x", 
+                                  "TagCode.y")))
 
 tag.modifed.df$TagCode.x <- paste0("'", tag.modifed.df$TagCode.x)
 tag.modifed.df$TagCode.y <- paste0("'", tag.modifed.df$TagCode.y)
 tag.modifed.df <- rename(tag.modifed.df, 
-                             FirstValue=TagCode.x,
-                             SecondValue=TagCode.y)
+                         FirstValue=TagCode.x,
+                         SecondValue=TagCode.y)
 
 tag.modifed.df$FieldName <- "TagCode"
 tag.modifed.df$Comment <- ""
@@ -165,34 +172,32 @@ modified.df <- rbind(modified.df, tag.modifed.df)
 
 #Find Added Records
 cat("Identifying Added Recoveries...\n")
-added.records.df <- filter(compare.df, is.na(TagCode.x) == TRUE, is.na(TagCode.y) == FALSE)
-added.records.df <- select(added.records.df, 
-                         one_of(c(kKeyFields, 
-                                  "Auxiliary",
-                                  "RecordFisheryName")))
-
-added.records.df$FirstValue <- ""
-added.records.df$SecondValue <- ""
-added.records.df$FieldName <- ""
-added.records.df$Comment <- "Added recovery to second database"
-
-modified.df <- rbind(modified.df, added.records.df)
+modified.df <- 
+  compare.df %>%
+  filter(is.na(TagCode.x) == TRUE, is.na(TagCode.y) == FALSE) %>%
+  select(one_of(c(kKeyFields, 
+                  "Auxiliary",
+                  "RecordFisheryName"))) %>%
+  mutate(FirstValue = "",
+         SecondValue = "",
+         FieldName = "",
+         Comment = str_glue("Added recovery to {basename(db.names[2])}")) %>%
+  bind_rows(modified.df)
 
 #Find Removed Records
 cat("Identifying Removed Recoveries...\n")
-removed.records.df <- filter(compare.df, is.na(TagCode.x) == FALSE, is.na(TagCode.y) == TRUE)
-removed.records.df <- select(removed.records.df, 
-                             one_of(c(kKeyFields, 
-                                      "Auxiliary",
-                                      "RecordFisheryName")))
-
-removed.records.df$FirstValue <- ""
-removed.records.df$SecondValue <- ""
-removed.records.df$FieldName <- ""
-removed.records.df$Comment <- "Removed recovery from the second database"
-modified.df <- rbind(modified.df, removed.records.df)
-
-modified.df <- arrange(modified.df, RunYear, Agency, RecoveryId)
+modified.df <- 
+  compare.df %>%
+  filter(is.na(TagCode.x) == FALSE, is.na(TagCode.y) == TRUE) %>%
+  select(one_of(c(kKeyFields, 
+                  "Auxiliary",
+                  "RecordFisheryName"))) %>%
+  mutate(FirstValue = "",
+         SecondValue = "",
+         FieldName = "",
+         Comment = str_glue("Removed recovery from {basename(db.names[2])}")) %>%
+  bind_rows(modified.df) %>%
+  arrange(RunYear, Agency, RecoveryId)
 
 
 diff.file.name <- file.path(report.dir,sprintf("diff_%s.csv", GetTimeStampText()))
