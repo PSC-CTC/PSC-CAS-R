@@ -12,7 +12,7 @@
 CASRecTblNames <- c("CWDBRecovery", "ERA_CWDBRecovery")
 CASFisheryTblNames <- c("Fishery", "ERA_Fishery")
 
-kCasBaseRecoveries <- "./sql/GetCasBaseRecoveries.sql"
+GetBaseRecoveriesSqlFilename <- "./sql/GetBaseRecoveries.sql"
 
 
 TranslateDbColumnNames <- function(data) {
@@ -73,12 +73,25 @@ getDbData <- function(db_conn, sql_filename, params = NULL) {
 }
 
 
-GetCasBaseRecoveries <- function (cas.db.conn){
+#' Get the base recoveries from the database, the function tries to
+#' retreives either the CAS or CIS version of recoveries
+#'
+#' @param db_conn A connection to the MRP Operational database
+#' @param sql_filename A text file containing SQL file
+#' @param params Parameters to insert into the SQL statement
+#'
+#' @importFrom dplyr %>% as_tibble
+#' @importFrom DBI dbGetQuery
+#' @importFrom stringr str_to_lower
+#'
+getBaseRecoveries <- function (cas.db.conn){
   #Find the approriate table name
   table_names <- sqlTables(cas.db.conn)$TABLE_NAME
   rec_tbl_name <- CASRecTblNames[CASRecTblNames %in% table_names]
   fishery_tbl_name <- CASFisheryTblNames[CASFisheryTblNames %in% table_names]
-  data <- getDbData(cas.db.conn, kCasBaseRecoveries, list(rec_tbl_name = rec_tbl_name,
-                                                          fishery_tbl_name = fishery_tbl_name))
+  data <- getDbData(cas.db.conn, 
+                    GetBaseRecoveriesSqlFilename, 
+                    list(rec_tbl_name = rec_tbl_name,
+                         fishery_tbl_name = fishery_tbl_name))
   return (data)
 }

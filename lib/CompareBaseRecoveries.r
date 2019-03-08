@@ -87,7 +87,7 @@ all.data <- parSapply(cl,
                         } else {
                           db.conn <- odbcConnectAccess(db.name)
                         }
-                        data <- GetCasBaseRecoveries(db.conn)
+                        data <- getBaseRecoveries(db.conn)
                         odbcClose(db.conn)
                         return(data)
                       })
