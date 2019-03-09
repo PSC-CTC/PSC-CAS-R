@@ -12,10 +12,10 @@
 
 rm(list=ls()) #clean up the workspace
 options(stringsAsFactors = FALSE)
-header <- "PSC CAS Base Recovery Compare v0.2"
+header <- "PSC CAS Base Recovery Compare v0.3"
 
 kKeyFields <- c("RecoveryId", "Agency", "RunYear")
-kPassThroughFields <- c("Auxiliary")
+kPassThroughFields <- c("Auxiliary", "RecoveryMonth", "RecoverySite", "RecTagCode")
 kCompareFields <- c("EstimatedNumber", "TagCode", "FisheryName")
 kUsedFields <- c(kKeyFields, kPassThroughFields, kCompareFields)
 
@@ -36,7 +36,7 @@ source(util.lib.name)
 cas.db.lib.name <- file.path(source.lib.dir, "CasDbLib.r")
 source(cas.db.lib.name)
 
-required.packages <- c("RODBC", "dplyr", "parallel", "stringr", "tools")
+required.packages <- c("RODBC", "dplyr", "parallel", "stringr", "tools", "lubridate")
 InstallRequiredPackages(required.packages)
 
 SetupCluster <- function() {
@@ -54,7 +54,7 @@ SetupCluster <- function() {
 
 db_file_filter <- rbind(Filters["All",], c("Access Database (*.mdb, *.accdb)", "*.mdb;*.accdb"))
 
-cat(paste0(header, "\n"))
+cat(str_c(header, "\n"))
 first.db.name <- choose.files(caption = "Select First CAS Database file", multi=FALSE, filters = db_file_filter)
 
 if (length(first.db.name) == 0) {
@@ -93,81 +93,89 @@ all.data <- parSapply(cl,
                       })
 stopCluster(cl)
 
-first.df <- all.data[[1]] %>% as_tibble()
-second.df <- all.data[[2]] %>% as_tibble()
+first.df <- 
+  as_tibble(all.data[[1]]) %>%
+  mutate(RecoveryMonth = as.integer(month(RecoveryDate)),
+         RecTagCode =  str_c("'", TagCode)) %>%
+  select(one_of(kUsedFields))
 
-first.df <- select(first.df, one_of(kUsedFields))
-second.df <- select(second.df, one_of(kUsedFields))
+second.df <-
+  as_tibble(all.data[[2]]) %>%
+  mutate(RecoveryMonth = as.integer(month(RecoveryDate)),
+         RecTagCode = str_c("'",TagCode)) %>%
+  select(one_of(kUsedFields))
 
 compare.df <- full_join(first.df, second.df, by=kKeyFields)
 
-#merge the Auxiliary flag from the first and second data set to a single value in Auxiliary
-compare.df$Auxiliary.x[is.na(compare.df$Auxiliary.x)]  <- compare.df$Auxiliary.y[is.na(compare.df$Auxiliary.x)]
-compare.df <- select(compare.df, -one_of("Auxiliary.y"))
-compare.df <- rename(compare.df, Auxiliary=Auxiliary.x)
-
-#merge the Fishery name from the first and second data set to a single value in FisheryName
-compare.df$RecordFisheryName <- compare.df$FisheryName.y
-compare.df$RecordFisheryName[is.na(compare.df$RecordFisheryName)]  <- compare.df$FisheryName.x[is.na(compare.df$RecordFisheryName)]
+# merge the Auxiliary flag, Recovery Month, Recovery Tag Code, and Fishery Name 
+# from the first and second data set 
+compare.df <-
+  compare.df %>%
+  mutate(Auxiliary = coalesce(Auxiliary.y, Auxiliary.x),
+         RecordFisheryName = coalesce(FisheryName.y, FisheryName.x),
+         RecoveryMonth = coalesce(RecoveryMonth.y, RecoveryMonth.x),
+         RecoverySite = coalesce(RecoverySite.y, RecoverySite.x),
+         RecTagCode = coalesce(RecTagCode.y, RecTagCode.x)) %>%
+  select(-one_of("Auxiliary.x", "Auxiliary.y", 
+                 "FisheryName.y", "FisheryName.x", 
+                 "RecoveryMonth.y", "RecoveryMonth.x",
+                 "RecTagCode.y", "RecTagCode.x"))
 
 modified.df <- NULL
 
 #Find Estimated Number Changes
 cat("Checking for Tag Code differences...\n")
-estimate.modifed.df <- filter(compare.df, EstimatedNumber.x != EstimatedNumber.y)
-
-estimate.modifed.df <- select(estimate.modifed.df, 
-                              one_of(c(kKeyFields, 
-                                       "Auxiliary", 
-                                       "RecordFisheryName", 
-                                       "EstimatedNumber.x", 
-                                       "EstimatedNumber.y")))
-
-estimate.modifed.df$EstimatedNumber.x <- as.character(estimate.modifed.df$EstimatedNumber.x)
-estimate.modifed.df$EstimatedNumber.y <- as.character(estimate.modifed.df$EstimatedNumber.y)
-estimate.modifed.df <- rename(estimate.modifed.df, 
-                              FirstValue=EstimatedNumber.x,
-                              SecondValue=EstimatedNumber.y)
-estimate.modifed.df$FieldName <- "EstimatedNumber"
-estimate.modifed.df$Comment <- ""
+estimate.modifed.df <- 
+  compare.df %>%
+  filter(EstimatedNumber.x != EstimatedNumber.y) %>%
+  select(one_of(c(kKeyFields, 
+                  kPassThroughFields, 
+                  "RecordFisheryName", 
+                  "EstimatedNumber.x", 
+                  "EstimatedNumber.y"))) %>%
+  mutate_at(vars("EstimatedNumber.x", "EstimatedNumber.y"), as.character) %>%
+  rename(FirstValue = EstimatedNumber.x,
+         SecondValue = EstimatedNumber.y) %>%
+  mutate(FieldName = "EstimatedNumber",
+         Comment = "")
 
 modified.df <- rbind(modified.df, estimate.modifed.df)
 
 #Find Fishery Name Changes
 cat("Checking for Fishery Name differences...\n")
-fishery.modifed.df <- filter(compare.df, FisheryName.x != FisheryName.y)
-fishery.modifed.df <- select(fishery.modifed.df, 
-                             one_of(c(kKeyFields, 
-                                      "Auxiliary", 
-                                      "RecordFisheryName", 
-                                      "FisheryName.x", 
-                                      "FisheryName.y")))
+fishery.modifed.df <- 
+  compare.df %>%
+  filter(coalesce(FisheryName.x, "") != coalesce(FisheryName.y, "")) %>%
+  select(one_of(c(kKeyFields, 
+                  kPassThroughFields, 
+                  "RecordFisheryName", 
+                  "FisheryName.x", 
+                  "FisheryName.y"))) %>%
+  rename(fishery.modifed.df, 
+         FirstValue=FisheryName.x,
+         SecondValue=FisheryName.y) %>%
+  mutate(FieldName = "FisheryName",
+         Comment = "")
 
-fishery.modifed.df <- rename(fishery.modifed.df, 
-                             FirstValue=FisheryName.x,
-                             SecondValue=FisheryName.y)
-fishery.modifed.df$FieldName <- "FisheryName"
-fishery.modifed.df$Comment <- ""
 modified.df <- rbind(modified.df, fishery.modifed.df)
 
 #Find Tag Code Changes
 cat("Checking for Tag Code differences...\n")
-tag.modifed.df <- filter(compare.df, TagCode.x != TagCode.y)
-tag.modifed.df <- select(tag.modifed.df, 
-                         one_of(c(kKeyFields, 
-                                  "Auxiliary", 
-                                  "RecordFisheryName", 
-                                  "TagCode.x", 
-                                  "TagCode.y")))
+tag.modifed.df <- 
+  compare.df %>%
+  filter(TagCode.x != TagCode.y) %>%
+  select(one_of(c(kKeyFields, 
+                  kPassThroughFields, 
+                  "RecordFisheryName", 
+                  "TagCode.x", 
+                  "TagCode.y"))) %>%
+  mutate(TagCode.x = str_c("'", TagCode.x),
+         TagCode.y = str_c("'", TagCode.y)) %>%
+  rename(FirstValue=TagCode.x,
+         SecondValue=TagCode.y) %>%
+  mutate(FieldName = "TagCode",
+         Comment = "")
 
-tag.modifed.df$TagCode.x <- paste0("'", tag.modifed.df$TagCode.x)
-tag.modifed.df$TagCode.y <- paste0("'", tag.modifed.df$TagCode.y)
-tag.modifed.df <- rename(tag.modifed.df, 
-                         FirstValue=TagCode.x,
-                         SecondValue=TagCode.y)
-
-tag.modifed.df$FieldName <- "TagCode"
-tag.modifed.df$Comment <- ""
 modified.df <- rbind(modified.df, tag.modifed.df)
 
 #Find Added Records
@@ -176,12 +184,12 @@ modified.df <-
   compare.df %>%
   filter(is.na(TagCode.x) == TRUE, is.na(TagCode.y) == FALSE) %>%
   select(one_of(c(kKeyFields, 
-                  "Auxiliary",
+                  kPassThroughFields,
                   "RecordFisheryName"))) %>%
   mutate(FirstValue = "",
          SecondValue = "",
          FieldName = "",
-         Comment = str_glue("Added recovery to {basename(db.names[2])}")) %>%
+         Comment = as.character(str_glue("Added recovery to {basename(db.names[2])}"))) %>%
   bind_rows(modified.df)
 
 #Find Removed Records
@@ -190,7 +198,7 @@ modified.df <-
   compare.df %>%
   filter(is.na(TagCode.x) == FALSE, is.na(TagCode.y) == TRUE) %>%
   select(one_of(c(kKeyFields, 
-                  "Auxiliary",
+                  kPassThroughFields,
                   "RecordFisheryName"))) %>%
   mutate(FirstValue = "",
          SecondValue = "",
@@ -200,10 +208,10 @@ modified.df <-
   arrange(RunYear, Agency, RecoveryId)
 
 
-diff.file.name <- file.path(report.dir,sprintf("diff_%s.csv", GetTimeStampText()))
+diff.file.name <- file.path(report.dir, str_glue("diff_{GetTimeStampText()}.csv"))
 WriteCsv(diff.file.name, modified.df)
 
-cat(sprintf("\nYour difference report file is now available at:\n%s\n\n", normalizePath(diff.file.name)))
+cat(str_glue("\nYour difference report file is now available at:\n{normalizePath(diff.file.name)}\n\n"))
 cat("Done\n")
 
 
