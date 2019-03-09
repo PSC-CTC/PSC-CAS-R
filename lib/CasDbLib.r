@@ -77,19 +77,13 @@ getDbData <- function(db_conn, sql_filename, params = NULL) {
 #' retreives either the CAS or CIS version of recoveries
 #'
 #' @param db_conn A connection to the MRP Operational database
-#' @param sql_filename A text file containing SQL file
-#' @param params Parameters to insert into the SQL statement
 #'
-#' @importFrom dplyr %>% as_tibble
-#' @importFrom DBI dbGetQuery
-#' @importFrom stringr str_to_lower
-#'
-getBaseRecoveries <- function (cas.db.conn){
+getBaseRecoveries <- function (db_conn){
   #Find the approriate table name
-  table_names <- sqlTables(cas.db.conn)$TABLE_NAME
+  table_names <- sqlTables(db_conn)$TABLE_NAME
   rec_tbl_name <- CASRecTblNames[CASRecTblNames %in% table_names]
   fishery_tbl_name <- CASFisheryTblNames[CASFisheryTblNames %in% table_names]
-  data <- getDbData(cas.db.conn, 
+  data <- getDbData(db_conn, 
                     GetBaseRecoveriesSqlFilename, 
                     list(rec_tbl_name = rec_tbl_name,
                          fishery_tbl_name = fishery_tbl_name))
