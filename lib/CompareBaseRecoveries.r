@@ -12,7 +12,7 @@
 
 rm(list=ls()) #clean up the workspace
 options(stringsAsFactors = FALSE)
-header <- "PSC CAS Base Recovery Compare v0.3"
+header <- "PSC CAS Base Recovery Compare v0.3a"
 
 kKeyFields <- c("RecoveryId", "Agency", "RunYear")
 kPassThroughFields <- c("Auxiliary", "RecoveryMonth", "RecoverySite", "RecTagCode")
@@ -117,7 +117,6 @@ compare.df <-
          RecoverySite = coalesce(RecoverySite.y, RecoverySite.x),
          RecTagCode = coalesce(RecTagCode.y, RecTagCode.x)) %>%
   select(-one_of("Auxiliary.x", "Auxiliary.y", 
-                 "FisheryName.y", "FisheryName.x", 
                  "RecoveryMonth.y", "RecoveryMonth.x",
                  "RecTagCode.y", "RecTagCode.x"))
 
@@ -145,14 +144,13 @@ modified.df <- rbind(modified.df, estimate.modifed.df)
 cat("Checking for Fishery Name differences...\n")
 fishery.modifed.df <- 
   compare.df %>%
-  filter(coalesce(FisheryName.x, "") != coalesce(FisheryName.y, "")) %>%
+  filter(FisheryName.x != FisheryName.y) %>%
   select(one_of(c(kKeyFields, 
                   kPassThroughFields, 
                   "RecordFisheryName", 
                   "FisheryName.x", 
                   "FisheryName.y"))) %>%
-  rename(fishery.modifed.df, 
-         FirstValue=FisheryName.x,
+  rename(FirstValue=FisheryName.x,
          SecondValue=FisheryName.y) %>%
   mutate(FieldName = "FisheryName",
          Comment = "")
@@ -203,7 +201,7 @@ modified.df <-
   mutate(FirstValue = "",
          SecondValue = "",
          FieldName = "",
-         Comment = str_glue("Removed recovery from {basename(db.names[2])}")) %>%
+         Comment = as.character(str_glue("Removed recovery from {basename(db.names[2])}"))) %>%
   bind_rows(modified.df) %>%
   arrange(RunYear, Agency, RecoveryId)
 
